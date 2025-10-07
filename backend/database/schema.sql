@@ -1,0 +1,97 @@
+-- Base de datos para Plataforma de Denuncia Ciudadana
+-- SQLite 3
+
+-- Tabla Usuario
+CREATE TABLE IF NOT EXISTS Usuario (
+    id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    contrasena TEXT NOT NULL,
+    tipo_usuario TEXT NOT NULL CHECK(tipo_usuario IN ('ciudadano', 'autoridad')),
+    fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla Denuncia
+CREATE TABLE IF NOT EXISTS Denuncia (
+    id_denuncia INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_usuario INTEGER NOT NULL,
+    descripcion TEXT NOT NULL,
+    foto_url TEXT,
+    latitud REAL NOT NULL,
+    longitud REAL NOT NULL,
+    fecha_denuncia DATETIME DEFAULT CURRENT_TIMESTAMP,
+    estado TEXT NOT NULL DEFAULT 'pendiente' CHECK(estado IN ('pendiente', 'en_proceso', 'resuelta')),
+    tipo_incidencia TEXT NOT NULL,
+    FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario) ON DELETE CASCADE
+);
+
+-- Tabla Seguimiento
+CREATE TABLE IF NOT EXISTS Seguimiento (
+    id_seguimiento INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_denuncia INTEGER NOT NULL,
+    id_autoridad INTEGER NOT NULL,
+    comentario TEXT NOT NULL,
+    fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_denuncia) REFERENCES Denuncia(id_denuncia) ON DELETE CASCADE,
+    FOREIGN KEY (id_autoridad) REFERENCES Usuario(id_usuario) ON DELETE CASCADE
+);
+
+-- Tabla Estadistica
+CREATE TABLE IF NOT EXISTS Estadistica (
+    id_estadistica INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo_incidencia TEXT NOT NULL UNIQUE,
+    total_reportadas INTEGER DEFAULT 0,
+    total_resueltas INTEGER DEFAULT 0,
+    fecha_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Índices para mejorar el rendimiento
+CREATE INDEX IF NOT EXISTS idx_denuncia_usuario ON Denuncia(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_denuncia_estado ON Denuncia(estado);
+CREATE INDEX IF NOT EXISTS idx_denuncia_tipo ON Denuncia(tipo_incidencia);
+CREATE INDEX IF NOT EXISTS idx_seguimiento_denuncia ON Seguimiento(id_denuncia);
+CREATE INDEX IF NOT EXISTS idx_usuario_tipo ON Usuario(tipo_usuario);
+
+-- Trigger para actualizar estadísticas al insertar denuncia
+CREATE TRIGGER IF NOT EXISTS actualizar_estadisticas_insert
+AFTER INSERT ON Denuncia
+BEGIN
+    INSERT INTO Estadistica (tipo_incidencia, total_reportadas, total_resueltas, fecha_actualizacion)
+    VALUES (NEW.tipo_incidencia, 1, 0, CURRENT_TIMESTAMP)
+    ON CONFLICT(tipo_incidencia) 
+    DO UPDATE SET 
+        total_reportadas = total_reportadas + 1,
+        fecha_actualizacion = CURRENT_TIMESTAMP;
+END;
+
+-- Trigger para actualizar estadísticas al cambiar estado a 'resuelta'
+CREATE TRIGGER IF NOT EXISTS actualizar_estadisticas_resuelta
+AFTER UPDATE OF estado ON Denuncia
+WHEN NEW.estado = 'resuelta' AND OLD.estado != 'resuelta'
+BEGIN
+    UPDATE Estadistica 
+    SET total_resueltas = total_resueltas + 1,
+        fecha_actualizacion = CURRENT_TIMESTAMP
+    WHERE tipo_incidencia = NEW.tipo_incidencia;
+END;
+
+-- Datos de ejemplo para pruebas
+INSERT INTO Usuario (nombre, email, contrasena, tipo_usuario) VALUES
+('Juan Pérez', 'juan@email.com', 'hash123', 'ciudadano'),
+('María López', 'maria@email.com', 'hash456', 'ciudadano'),
+('Carlos Rojas', 'carlos@municipio.gob.pe', 'hash789', 'autoridad');
+
+INSERT INTO Denuncia (id_usuario, descripcion, foto_url, latitud, longitud, tipo_incidencia, estado) VALUES
+(1, 'Bache grande en la Av. Sol', '/uploads/bache1.jpg', -13.5170, -71.9785, 'Infraestructura Vial', 'pendiente'),
+(2, 'Basura acumulada en esquina', '/uploads/basura1.jpg', -13.5180, -71.9790, 'Residuos Sólidos', 'en_proceso'),
+(1, 'Semáforo dañado cruce principal', '/uploads/semaforo1.jpg', -13.5165, -71.9775, 'Señalización', 'pendiente');
+
+INSERT INTO Seguimiento (id_denuncia, id_autoridad, comentario) VALUES
+(2, 3, 'Cuadrilla asignada para recolección mañana'),
+(2, 3, 'Basura recogida exitosamente');
+
+-- Consultas útiles para verificar
+-- SELECT * FROM Usuario;
+-- SELECT * FROM Denuncia;
+-- SELECT * FROM Seguimiento;
+-- SELECT * FROM Estadistica;
